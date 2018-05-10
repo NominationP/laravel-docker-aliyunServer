@@ -38,7 +38,10 @@ class WeChatController extends Controller
 
         $app->server->push(function ($message) {
 
-            $fix_return = '回复 1 获取今日单词'."\n".'回复 2 获取今日老友 '."\n\n".'有什么想获取的内容吗,说说看,请以"get"为开头,结尾附上邮箱地址,我会实时收到哦 格式为 "email:XXXXX@qq.com"';
+            $fix_return =    '回复 1 获取今日单词'."\n"
+                            .'回复 2 获取今日老友'."\n"
+                            .'回复 3 获取DDALOG'."\n"
+                            ."\n".'有什么想获取的内容吗,说说看,请以"get"为开头,结尾附上邮箱地址,我会实时收到哦 格式为 "email:XXXXX@qq.com"';
 
             switch ($message['MsgType']) {
                 case 'event':
@@ -54,8 +57,26 @@ class WeChatController extends Controller
                         return $detail = \App::call('App\Http\Controllers\DDATransController@get');
                     }
                     elseif($content == 2){
-                        return "todo";
+                        return $detail = \App::call('App\Http\Controllers\FriendsController@get');
                     }
+
+                    elseif($content == 3){
+                        return \App::call('App\Http\Controllers\DDATransController@get_daily_update');
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                     elseif(substr($content,0,3)=="get"){
 
                         $email = array_values(array_slice(explode("email:",$content), -1))[0];

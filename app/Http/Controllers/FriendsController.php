@@ -1,7 +1,5 @@
 <?php
 
-
-
 namespace App\Http\Controllers;
 use App\DDATrans;
 use GuzzleHttp\Client;
@@ -19,39 +17,123 @@ class FriendsController extends Controller
 	}
 
 
+	public function get_update_range($key,$begin,$range_flag,$supInfo){
+
+		if($begin == -1){
+			/**
+			 * get begin by supInfo
+			 */
+			$count = 0 ;
+			while(true){
+				$detail = Redis::zRange($key,$count,$count);
+
+				if($detail[0] == $supInfo){
+					$begin = $count+1;
+					break;
+				}
+				$count++;
+
+			}
+			if($begin == -1){
+				return "";
+			}
+		}
+		$res = [];
+
+		$flag_count = 0;
+		while(true){
+
+			$detail = Redis::zRange($key,$begin,$begin);
+
+			if($detail == null){
+				break;
+			}
+
+			array_push($res,$detail[0]);
+
+			if (strpos($detail[0], $range_flag) !== false) {
+
+				$flag_count++;
+				if($flag_count == 1){
+			    	break;
+				}
+			}
+
+			$begin++;
+
+
+
+		}
+
+		return $res;
+
+	}
+
+
 
 	public function get(){
+
+
 		date_default_timezone_set('Asia/Shanghai');
+
+		/** @var array redis kyes of fd */		
+		$redis_fd = Redis::keys("friends*");
+		sort($redis_fd);
+		if($redis_fd == null){
+			abort('redis::keys("friends*") return null');
+		}
+
+		/**
+		 * set range from # to #
+		 */
 		$date = date("Y-m-d");
-		$log = Storage::disk('local')->get(explode("\\",__METHOD__)[3]); // __CLASS__."@".__FUNCTION__
+
+		if(!Storage::disk('local')->exists(explode("\\",__METHOD__)[3])){
+			Storage::disk('local')->put(explode("\\",__METHOD__)[3],"");
+		}
+		$log = explode("\n",Storage::disk('local')->get(explode("\\",__METHOD__)[3]))[0]; // __CLASS__."@".__FUNCTION__
+
 		if($log == "")
-			$new_date = "";
+			$new_date = "" ;
 		else
 			$new_date = json_decode(explode("\n",$log)[0],true)[0];
 
+		if($new_date != $date){
 
-		$flag = false;
-		if($date!=$new_date){
-			$flag = true;
-		}
+			if($new_date == ""){
 
-		// return Redis::set("ddaCount",0);
+				/** first message */
+				$detail = $this->get_update_range($redis_fd[0],0,"---","");
+				array_unshift($detail,$redis_fd[0]);
 
-		if(Redis::exists("ddaCount") == 0){
-			Redis::set("ddaCount",0);
-		}else{
-			if($flag)
-				Redis::INCR("ddaCount");
-		}   
-		
- 		$begin = Redis::get("ddaCount")*10;
 
-		$detail = Redis::zRange("dda",$begin,$begin+9);
-		array_unshift($detail, $date);
+			}else{
 
-		if($flag)
+				$log_arr = json_decode($log,true);
+
+				$title = array_values(array_slice($log_arr, 1))[0];
+				$last_line_title = array_values(array_slice($log_arr, -1))[0];
+				$detail =  $this->get_update_range($title,-1,"---",$last_line_title);
+
+				if($detail == []){
+					return "FINE FIRST BLOOD, QUICK TO DEVP SECOND!";
+				}
+
+
+				array_unshift($detail,$title);
+
+			}
+
+			array_unshift($detail, $date);
+
 			Storage::disk('local')->prepend(explode("\\",__METHOD__)[3], json_encode($detail,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
 
+		}else{
+
+			$detail = json_decode($log,true);
+
+
+		}
 
 		return implode("\n",$detail);
 
@@ -63,9 +145,9 @@ class FriendsController extends Controller
 	public function store(){
 
 		$url = "https://api.github.com/repos/NominationP/NominationP.github.io/git/trees/38a08631c3892937498148c6af30fdabfe54bd3a";
-		$client = new Client(['auth' => ['NominationP', 'a873525']]);
+		$client = new Client();
 
-		$res = $client->get($url);
+		$res = $client->get($url,['auth' => ['NominationP', 'a873525']]);
 		$github_tree = $res->getBody();
 		$github_tree_arr = json_decode($github_tree,true);
 
@@ -76,13 +158,16 @@ class FriendsController extends Controller
 			$url = $value['url'];
 			$title = substr(explode("-",$title)[3], 0, -3);
 
+			/** each del keys */
+			Redis::del($title);
+
 			$res = $client->get($url);
 			$github_tree = $res->getBody();
 			$github_tree_arr = json_decode($github_tree,true);
 
 			$content = base64_decode($github_tree_arr['content']);
 			$content = array_filter(explode("\n",$content));
-			$redis_content = Redis::zRange($title,0,-1);
+			// $redis_content = Redis::zRange($title,0,-1);
 
 
 
@@ -96,20 +181,27 @@ class FriendsController extends Controller
 
 				$detail = rtrim($value_line);
 
-				if($key_line == 31){
-					return $value_line;
-				}
+				// if($key_line == 32){
+				// 	return $value_line;
+				// }
 
 				// if($detail == "- ch Sounds like a date to me")
 				// 	return $key_line;
 
 				if($detail==null) continue;
+
+				if (strpos($detail, '---') !== false) {
+					$detail = '--------DAILY :)DONE-----SEP'.$key_line;
+
+					// Redis::zAdd($title,$key_line,$detail);die();
+
+				}
+
+				// if($key_line == 80) break;
 				
 				Redis::zAdd($title,$key_line,$detail);
 
 			}
-
-			return ;
 
 
 		}
